@@ -22,4 +22,6 @@ A http server running more JShells
 
 ## Sketch
 
-![Reference](reference.png)
+![Reference](design/reference.png)
+
+![FSM](design/fsm.png)
