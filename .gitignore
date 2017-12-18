@@ -79,3 +79,8 @@ flycheck_*.el
 
 # directory configuration
 .dir-locals.el
+
+# Ensime specific
+.ensime
+.ensime_cache/
+.ensime_lucene/
