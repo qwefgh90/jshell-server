@@ -27,7 +27,7 @@ import akka.stream.scaladsl.StreamConverters
 import jdk.jshell.tool.JavaShellToolBuilder
 import org.scalatest.time.Seconds
 import org.scalatest.time.Span
-
+import org.apache.commons.lang3.SystemUtils
 
 class HelloSpec extends FlatSpec with Matchers {
   "The Hello object" should "say hello" in {
@@ -45,24 +45,31 @@ class HelloSpec extends FlatSpec with Matchers {
     pisFromServer.connect(posFromServer)
     
     // OS X for reading each byte immediately
-    posFromServer.write(Array[Byte](27,91,50,53,59,57,82))
-    
-    var expectedPrint = false
-    val wsSink: Sink[Message, Future[Done]] = Sink.foreach {
-      case message: TextMessage.Strict => {
-        //echo
-        print(message.getStrictText)
-        if(message.getStrictText.contains("Welcome")){
-          psFromServer.print("int i = 0;")
-          posFromServer.write(Array[Byte](10,27,91,50,53,59,57,82))
-        }
-        else if(message.getStrictText.contains("i ==> 0")){
-          psFromServer.print("int i = 1;")
-          posFromServer.write(Array[Byte](10,27,91,50,53,59,57,82)) 
-        }else if(message.getStrictText.contains("i ==> 1")){
-          expectedPrint = true
-        }
-      }
+    if(SystemUtils.IS_OS_MAC)
+    	posFromServer.write(Array[Byte](27,91,50,53,59,57,82))
+
+    	var expectedPrint = false
+    	val wsSink: Sink[Message, Future[Done]] = Sink.foreach {
+    	case message: TextMessage.Strict => {
+    		//echo
+    		print(message.getStrictText)
+    		if(message.getStrictText.contains("Welcome")){
+    			psFromServer.print("int i = 0;")
+    			if(SystemUtils.IS_OS_MAC)
+    				posFromServer.write(Array[Byte](27,91,50,53,59,57,82))
+          else
+          	posFromServer.write(Array[Byte](10))
+    		}
+    		else if(message.getStrictText.contains("i ==> 0")){
+    			psFromServer.print("int i = 1;")
+    			if(SystemUtils.IS_OS_MAC)
+    				posFromServer.write(Array[Byte](27,91,50,53,59,57,82))
+      		else
+    				posFromServer.write(Array[Byte](10))
+
+    		}else if(message.getStrictText.contains("i ==> 1"))
+    			expectedPrint = true
+    	}
     }
     
     val es = Executors.newCachedThreadPool();

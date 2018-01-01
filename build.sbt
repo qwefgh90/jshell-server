@@ -20,6 +20,7 @@ lazy val remote_jshell = (project in file("remote-jshell")).settings(
   scalaVersion := "2.12.3",
   version      := "0.1.0-SNAPSHOT",
   libraryDependencies += scalaTest % Test,
+  libraryDependencies += "org.apache.commons" % "commons-lang3" % "3.4",
   libraryDependencies += "com.typesafe.akka" %% "akka-http" % "10.0.11",
   libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.0.11" % Test,
 )
