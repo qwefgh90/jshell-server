@@ -18,10 +18,11 @@ import akka.http.scaladsl.model.ws._
 import scala.concurrent.Future
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.Executors
 
 /*
  * 1. java application starts up in cotainer 
- * 2. connect to server
+ * 2. connect to relay server
  * 3. run jshell
  * 4. read and write encoded string over akka stream
  * 5. exit jshell and stop the container 
@@ -33,17 +34,42 @@ object Hello extends Greeting with App {
   
   // make Sink with input stream
   val posFromServer = new PipedOutputStream()
-  val pisFromServer = new PipedInputStream(posFromServer)
+  val psFromServer = new PrintStream(posFromServer)
+  val pisFromServer = new PipedInputStream(1024 * 1024)	// 
+  pisFromServer.connect(posFromServer)
+  
+  // mac os
+  posFromServer.write(Array[Byte](27,91,50,53,59,57,82))
   
   val wsSink: Sink[Message, Future[Done]] = Sink.foreach {
     case message: TextMessage.Strict => {
-      print(message.getStrictText)
-      if(message.getStrictText.contains("jshell> "))
-        posFromServer.write("int i = 0;\n".getBytes)  //user input
-      else if(message.text.contains("i ==> 0"))
-        system.terminate()
+      //echo
+      print("@"+message.getStrictText)
+      if(message.getStrictText.contains("Welcome")){
+        psFromServer.print("int i = 0;")
+        posFromServer.write(Array[Byte](10,27,91,50,53,59,57,82))
+      }
+      else if(message.getStrictText.contains("i ==> 0")){
+        psFromServer.print("int i = 1;")
+        posFromServer.write(Array[Byte](10,27,91,50,53,59,57,82)) // for reading each byte immediately
+      }
     }
   }
+  
+  val es = Executors.newCachedThreadPool();
+  
+  /*es.submit(new Runnable(){
+    def run(){
+      var f = false
+      while(!f){
+        val r = System.in.read()
+        //System.out.print("b:"+r)
+        if(r == 'q')
+          f = true
+          
+      }
+    }
+  })*/
   
   // make Source with output Stream
   val wsSource = StreamConverters.asOutputStream().map(bs => TextMessage(bs.utf8String))
@@ -57,7 +83,6 @@ object Hello extends Greeting with App {
       Http().singleWebSocketRequest(WebSocketRequest(addr), flow)
   
   val printStream = new PrintStream(osToServer)
-  
   val connected = upgradeResponse.map { upgrade =>
     // just like a regular http request we can access response status which is available via upgrade.response.status
     // status code 101 (Switching Protocols) indicates that server support WebSockets
@@ -69,7 +94,17 @@ object Hello extends Greeting with App {
   }
   connected.onComplete(println)
   
-  JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()
+  es.submit(new Runnable(){
+    def run(){
+      JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()
+    }  
+  })
+  java.lang.Thread.sleep(10000);
+  System.out.println("terminated!!")
+  pisFromServer.close()
+  printStream.close()
+  system.terminate()
+  es.shutdown()
 }
 
 trait Greeting {
