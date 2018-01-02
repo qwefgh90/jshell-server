@@ -5,6 +5,7 @@ import akka.cluster.Cluster
 import akka.cluster.ClusterEvent._
 import akka.cluster.pubsub.{DistributedPubSubMediator, DistributedPubSub}
 import Messages._
+import FSMMeta._
 import scala.concurrent.duration._
 
 object ClientSocketActor {
@@ -52,19 +53,4 @@ class ClientSocketActor(out: ActorRef, sid: String) extends FSM[State,Data] {
   }
   
   this.initialize()
-  
-  /*val toShellId = "s" + gid
-  val toClientId = "c" + gid
-  import DistributedPubSubMediator.{ Subscribe, SubscribeAck, Publish }
-  val mediator = DistributedPubSub(context.system).mediator
-  mediator ! Subscribe(toClientId, self)
-  def receive = {
-    case subMsg: SubMessage => {
-      out ! subMsg.text // forward
-    }
-    case msg: String => {
-      log.info("got: " + msg)
-      mediator ! Publish(toShellId, msg)
-    }
-  }*/
 }

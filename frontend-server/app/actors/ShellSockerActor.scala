@@ -5,6 +5,7 @@ import akka.cluster.Cluster
 import akka.cluster.ClusterEvent._
 import akka.cluster.pubsub.{DistributedPubSubMediator, DistributedPubSub}
 import Messages._
+import FSMMeta._
 
 object ShellSocketActor {
   def props(out: ActorRef, sid: String) = Props(new ShellSocketActor(out, sid))
@@ -50,19 +51,4 @@ class ShellSocketActor(out: ActorRef, sid: String) extends FSM[State,Data] {
   this.initialize()
   
   mediator ! Publish(sid, SetTarget(self)) // send reference
-  
-  /*val toShellId = "s" + gid
-  val toClientId = "c" + gid
-  import DistributedPubSubMediator.{ Subscribe, SubscribeAck, Publish }
-  val mediator = DistributedPubSub(context.system).mediator
-  mediator ! Subscribe(toShellId, self)
-  def receive = {
-    case subMsg: SubMessage => {
-      out ! subMsg.text // forward
-    }
-    case msg: String => {
-      log.info("got: " + msg)
-      mediator ! Publish(toClientId, msg)
-    }
-  }*/
 }

@@ -1,6 +1,7 @@
 package example
 
 import java.io.PipedInputStream
+import org.apache.commons.lang3.SystemUtils
 import java.io.PipedOutputStream
 import java.io.PrintStream
 
@@ -32,6 +33,8 @@ object Hello extends Greeting with App {
   implicit val materializer = ActorMaterializer()
   import system.dispatcher
   
+  
+  
   // make Sink with input stream
   val posFromServer = new PipedOutputStream()
   val psFromServer = new PrintStream(posFromServer)
@@ -39,7 +42,8 @@ object Hello extends Greeting with App {
   pisFromServer.connect(posFromServer)
   
   // mac os
-  posFromServer.write(Array[Byte](27,91,50,53,59,57,82))
+  if(SystemUtils.IS_OS_MAC)
+    posFromServer.write(Array[Byte](27,91,50,53,59,57,82))
   
   val wsSink: Sink[Message, Future[Done]] = Sink.foreach {
     case message: TextMessage.Strict => {
@@ -47,11 +51,17 @@ object Hello extends Greeting with App {
       print("@"+message.getStrictText)
       if(message.getStrictText.contains("Welcome")){
         psFromServer.print("int i = 0;")
-        posFromServer.write(Array[Byte](10,27,91,50,53,59,57,82))
+        if(SystemUtils.IS_OS_MAC)
+          posFromServer.write(Array[Byte](10,27,91,50,53,59,57,82))
+        else
+          posFromServer.write(Array[Byte](10))
       }
       else if(message.getStrictText.contains("i ==> 0")){
         psFromServer.print("int i = 1;")
-        posFromServer.write(Array[Byte](10,27,91,50,53,59,57,82)) // for reading each byte immediately
+        if(SystemUtils.IS_OS_MAC)
+          posFromServer.write(Array[Byte](10,27,91,50,53,59,57,82)) // for reading each byte immediately
+        else
+        	posFromServer.write(Array[Byte](10))
       }
     }
   }
