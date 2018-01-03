@@ -7,13 +7,14 @@ import java.io.PrintStream
 import akka.actor.ActorSystem
 import akka.stream.{ ActorMaterializer, Materializer }
 import jdk.jshell.tool.JavaShellToolBuilder
+import jdk.jshell.execution.LocalExecutionControlProvider
 import akka.stream.scaladsl.StreamConverters
 import akka.{ Done, NotUsed }
 import akka.http.scaladsl.Http
 import akka.stream.scaladsl._
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.ws._
-import scala.concurrent.Future
+import scala.concurrent.{Future, blocking}
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.Executors
@@ -22,6 +23,7 @@ import play.api.libs.json._
 import scala.util.{Success, Failure}
 import com.typesafe.scalalogging.Logger
 import scala.concurrent.ExecutionContext
+import jdk.jshell.spi._
 
 case class WebSocketClient(url: String, key: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext) {
   def connect(): WSJShell = {
@@ -31,7 +33,6 @@ case class WebSocketClient(url: String, key: String)(implicit system: ActorSyste
 
 case class WSJShell(url: String, key: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext)  {
   val logger = Logger(classOf[WSJShell])
-  val es = Executors.newCachedThreadPool();
   
   // make Sink with input stream
   val posFromServer = new PipedOutputStream()
@@ -88,19 +89,32 @@ case class WSJShell(url: String, key: String)(implicit system: ActorSystem, mate
   connected.onComplete({
     case Success(v) => {
         logger.info(s"Success to connection ${v}")
-    	  es.execute(new Runnable(){
-    		  def run(){
-    			  JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()
-    			  close()
-    		  }  
-    	  })
+        newJShell()
       }
       case Failure(e) => {
         logger.error("Failed to connection", e)
         close()
       }
     })
-  
+  private def newJShell(){
+    var t = false;
+	  Future{
+  	    val list = java.util.ServiceLoader.load(classOf[jdk.jshell.spi.ExecutionControlProvider], ClassLoader.getSystemClassLoader)
+  	    list.forEach(e => logger.info("name: " + e.name()))
+  	    Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
+  	    JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()
+  		  close()
+	  }
+	  Future{
+	    while(!t){
+       if(printStream.checkError()){
+         logger.info("print stream error")
+       }
+	     Thread.sleep(1000)
+	    }
+	  }
+  }
+    
   private def getNewLine = { 
     val helperConsoleMacOS = Array[Byte](27,91,50,53,59,57,82)  
     if(SystemUtils.IS_OS_MAC){
@@ -113,6 +127,5 @@ case class WSJShell(url: String, key: String)(implicit system: ActorSystem, mate
     logger.info("Cleaning stream resources and executor")
     pisFromServer.close()
     printStream.close()
-    es.shutdown()
   }
 }

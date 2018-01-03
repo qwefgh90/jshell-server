@@ -23,6 +23,7 @@ import clients._
 import actors.Messages._
 import scala.concurrent.ExecutionContext.Implicits.global
 import play.api.libs.json._
+import scala.concurrent.ExecutionContext
 
 /**
  * Add your spec here.
@@ -57,6 +58,7 @@ class IntegrationSpec extends PlaySpec {
   
   "Web socket actors test for graceful termination with /exit" in new WithServer() {
     val system = this.app.injector.instanceOf[ActorSystem]
+    val ec = this.app.injector.instanceOf[ExecutionContext]
     var welcomeMsg = ""
     
     val printSink: Sink[Message, Future[Done]] = Sink.foreach {
@@ -73,7 +75,7 @@ class IntegrationSpec extends PlaySpec {
     await{
       Future{
         val outputStream = connect("clientws", port.toString, printSink, wsSource)(system, implicitMaterializer)
-        val wsJshell = WebSocketClient(s"ws://localhost:${port}/shellws", "123")(system, implicitMaterializer).connect()
+        val wsJshell = WebSocketClient(s"ws://localhost:${port}/shellws", "123")(system, implicitMaterializer, ec).connect()
         outputStream.write(Json.toJson(InEvent(MessageType.i.toString, "/exit\n")).toString.getBytes)
         Thread.sleep(jshellLatency)
       }
@@ -87,6 +89,7 @@ class IntegrationSpec extends PlaySpec {
   
   "Web socket actors test for graceful termination with closing client connection" in new WithServer() {
     val system = this.app.injector.instanceOf[ActorSystem]
+    val ec = this.app.injector.instanceOf[ExecutionContext]
     var welcomeMsg = ""
     
     val printSink: Sink[Message, Future[Done]] = Sink.foreach {
@@ -103,7 +106,7 @@ class IntegrationSpec extends PlaySpec {
     await{
       Future{
         val outputStream = connect("clientws", port.toString, printSink, wsSource)(system, implicitMaterializer)
-        val wsJshell = WebSocketClient(s"ws://localhost:${port}/shellws", "123")(system, implicitMaterializer).connect()
+        val wsJshell = WebSocketClient(s"ws://localhost:${port}/shellws", "123")(system, implicitMaterializer, ec).connect()
         Thread.sleep(jshellLatency)
         outputStream.close()
         Thread.sleep(jshellLatency)

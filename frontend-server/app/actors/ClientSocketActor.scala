@@ -77,7 +77,7 @@ class ClientSocketActor(out: ActorRef, sid: String, config: Configuration, jshel
         d.actorRef ! InEvent(MessageType.ic.toString, InternalControlValue.terminate.toString)
       }
     }
-    case StopEvent(FSM.Shutdown, state, data)       =>{
+    case StopEvent(FSM.Shutdown, state, data) => {
       if(state == Uninitialized){
       }else{
         val d = data.asInstanceOf[InteractiveData]
@@ -97,5 +97,5 @@ class ClientSocketActor(out: ActorRef, sid: String, config: Configuration, jshel
   
   this.initialize()
   
-  jshellLauncher.launch("123")
+  jshellLauncher.launch(sid)
 }

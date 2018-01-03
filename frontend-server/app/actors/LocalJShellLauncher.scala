@@ -6,7 +6,7 @@ import play.core.server.ServerConfig
 import clients.WebSocketClient
 import akka.actor.ActorSystem
 import akka.stream.{ ActorMaterializer, Materializer }
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 
 class LocalJShellLauncher @Inject()(config: Configuration)(implicit system: ActorSystem, mat: Materializer, ec: ExecutionContext) extends JShellLauncher{
   override def launch(key: String): Unit = {
@@ -14,6 +14,8 @@ class LocalJShellLauncher @Inject()(config: Configuration)(implicit system: Acto
     val url = s"ws://localhost:${port}/shellws"
     println("url: "+ url)
     val client = WebSocketClient(url, key)
-    client.connect()
+    Future{
+      client.connect()
+    }
   }
 }
