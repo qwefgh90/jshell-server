@@ -23,10 +23,7 @@
   <appender name="ASYNCSTDOUT" class="ch.qos.logback.classic.AsyncAppender">
     <appender-ref ref="STDOUT" />
   </appender>
-
-  <logger name="play" level="INFO" />
-  <logger name="application" level="DEBUG" />
-  <logger name="actors" level="DEBUG" />
+  
   <logger name="clients" level="INFO" />
 
   <!-- Off these ones as they are annoying, and anyway we manage configuration ourselves -->

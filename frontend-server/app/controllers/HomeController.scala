@@ -1,11 +1,12 @@
 package controllers
 
 import javax.inject._
+import play.api.Configuration
 import play.api._
 import play.api.mvc._
 import play.api.libs.streams.ActorFlow
 import actors.Messages._
-import actors.{ ClientSocketActor, ShellSocketActor }
+import actors.{ ShellSocketActorFactory, ClientSocketActorFactory }
 import akka.actor.ActorSystem
 import akka.stream.Materializer
 
@@ -14,17 +15,16 @@ import akka.stream.Materializer
  * application's home page.
  */
 @Singleton
-class HomeController @Inject()(cc: ControllerComponents)(implicit system: ActorSystem, mat: Materializer) extends AbstractController(cc) {
-
+class HomeController @Inject()(cc: ControllerComponents)(clientSocketActorFactory: ClientSocketActorFactory, shellSocketActorFactory: ShellSocketActorFactory, config: Configuration)(implicit system: ActorSystem, mat: Materializer) extends AbstractController(cc) {
   def clientws = WebSocket.accept[InEvent, OutEvent] { request =>
     ActorFlow.actorRef { out =>
-      ClientSocketActor.props(out, "123")
+      clientSocketActorFactory.props(out, "123")
     }
   }
   
   def shellws = WebSocket.accept[OutEvent, InEvent] { request =>
     ActorFlow.actorRef { out =>
-      ShellSocketActor.props(out, "123")
+      shellSocketActorFactory.props(out, "123")
     }
   }
   

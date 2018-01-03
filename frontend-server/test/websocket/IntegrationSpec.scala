@@ -1,4 +1,4 @@
-package controllers
+package websocket
 
 import org.scalatestplus.play._
 import org.scalatestplus.play.guice._
@@ -30,14 +30,16 @@ import play.api.libs.json._
  *
  * For more information, see https://www.playframework.com/documentation/latest/ScalaTestingWithScalaTest
  */
-class HomeControllerSpec extends PlaySpec {
+class IntegrationSpec extends PlaySpec {
   
-  def connect(path: String, port: String, sink: Sink[Message, _], source: Source[Message, _])(implicit system: ActorSystem, mat: Materializer) = {
+  val jshellLatency = 5000
+  
+  def connect[T](path: String, port: String, sink: Sink[Message, _], source: Source[Message, T])(implicit system: ActorSystem, mat: Materializer) :T = {
     val flow = Flow.fromSinkAndSourceMat(sink, source)(Keep.right)
     val addr = s"ws://localhost:${port}/${path}"
     
     // materialized
-    val (upgradeResponse, _) =
+    val (upgradeResponse, mv) =
         Http(system).singleWebSocketRequest(WebSocketRequest(addr), flow)
         
     val connected = upgradeResponse.map { upgrade =>
@@ -50,10 +52,10 @@ class HomeControllerSpec extends PlaySpec {
       }
     }
     connected.onComplete(println)
+    mv
   }
   
-  
-  "test server logic" in new WithServer() {
+  "Web socket actors test for graceful termination with /exit" in new WithServer() {
     val system = this.app.injector.instanceOf[ActorSystem]
     var welcomeMsg = ""
     
@@ -61,7 +63,8 @@ class HomeControllerSpec extends PlaySpec {
       case message: TextMessage.Strict => {
         val oe = Json.parse(message.getStrictText).validate[OutEvent].get
         val msg = oe.m
-        welcomeMsg += msg
+        if(oe.t == MessageType.o.toString)
+          welcomeMsg += msg
       }
     }
     
@@ -69,46 +72,46 @@ class HomeControllerSpec extends PlaySpec {
     
     await{
       Future{
-        connect("clientws", port.toString, printSink, wsSource)(system, implicitMaterializer)
+        val outputStream = connect("clientws", port.toString, printSink, wsSource)(system, implicitMaterializer)
         val wsJshell = WebSocketClient(s"ws://localhost:${port}/shellws", "123")(system, implicitMaterializer).connect()
-        Thread.sleep(5000)
+        outputStream.write(Json.toJson(InEvent(MessageType.i.toString, "/exit\n")).toString.getBytes)
+        Thread.sleep(jshellLatency)
       }
     }
     
     assert(welcomeMsg.contains("""|  Welcome to JShell -- Version 9.0.1"""))
     assert(welcomeMsg.contains("""|  For an introduction type: /help intro"""))
     assert(welcomeMsg.contains("""jshell> """))
+    assert(welcomeMsg.contains("""|  Goodbye"""))
   }
   
-  
-  "HomeController GET" should {
-/*
-    "render the index page from a new instance of controller" in {
-      val controller = new HomeController(stubControllerComponents())
-      val home = controller.index().apply(FakeRequest(GET, "/"))
-
-      status(home) mustBe OK
-      contentType(home) mustBe Some("text/html")
-      contentAsString(home) must include ("Welcome to Play")
+  "Web socket actors test for graceful termination with closing client connection" in new WithServer() {
+    val system = this.app.injector.instanceOf[ActorSystem]
+    var welcomeMsg = ""
+    
+    val printSink: Sink[Message, Future[Done]] = Sink.foreach {
+      case message: TextMessage.Strict => {
+        val oe = Json.parse(message.getStrictText).validate[OutEvent].get
+        val msg = oe.m
+        if(oe.t == MessageType.o.toString)
+          welcomeMsg += msg
+      }
     }
-
-    "render the index page from the application" in {
-      val controller = inject[HomeController]
-      val home = controller.index().apply(FakeRequest(GET, "/"))
-
-      status(home) mustBe OK
-      contentType(home) mustBe Some("text/html")
-      contentAsString(home) must include ("Welcome to Play")
+    
+    val wsSource = StreamConverters.asOutputStream().map(bs => TextMessage(bs.utf8String))
+    
+    await{
+      Future{
+        val outputStream = connect("clientws", port.toString, printSink, wsSource)(system, implicitMaterializer)
+        val wsJshell = WebSocketClient(s"ws://localhost:${port}/shellws", "123")(system, implicitMaterializer).connect()
+        Thread.sleep(jshellLatency)
+        outputStream.close()
+        Thread.sleep(jshellLatency)
+      }
     }
-
-    "render the index page from the router" in {
-      val request = FakeRequest(GET, "/")
-      val home = route(app, request).get
-
-      status(home) mustBe OK
-      contentType(home) mustBe Some("text/html")
-      contentAsString(home) must include ("Welcome to Play")
-    }
-    */
+    
+    assert(welcomeMsg.contains("""|  Welcome to JShell -- Version 9.0.1"""))
+    assert(welcomeMsg.contains("""|  For an introduction type: /help intro"""))
+    assert(welcomeMsg.contains("""jshell> """))
   }
 }

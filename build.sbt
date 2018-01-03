@@ -16,7 +16,7 @@ lazy val common = (project in file("common")).
 )
 
 lazy val frontend_server: Project = (project in file("frontend-server"))
-.dependsOn(common).dependsOn(remote_jshell % "test").enablePlugins(PlayScala).settings(
+.dependsOn(common).dependsOn(remote_jshell).enablePlugins(PlayScala).settings(
   name := """frontend-server""",
   organization := "io.github.qwefgh90",
   version := "1.0-SNAPSHOT",
@@ -36,8 +36,10 @@ lazy val remote_jshell = (project in file("remote-jshell")).dependsOn(common).se
   organization := "io.github.qwefgh90",
   scalaVersion := "2.12.3",
   version      := "0.1.0-SNAPSHOT",
-  libraryDependencies += scalaTest % Test,
   libraryDependencies += "org.apache.commons" % "commons-lang3" % "3.4",
   libraryDependencies += "com.typesafe.akka" %% "akka-http" % "10.0.11",
+  libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3",
+  libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
   libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.0.11" % Test,
+  libraryDependencies += scalaTest % Test
 )
