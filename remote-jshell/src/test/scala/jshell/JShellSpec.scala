@@ -54,6 +54,7 @@ class JShellSpec extends FlatSpec with Matchers {
     	case message: TextMessage.Strict => {
     		//echo
     		print(message.getStrictText)
+    		//message.getStrictText.getBytes.foreach(b => print("_"+b+ "_"))
     		if(message.getStrictText.contains("Welcome")){
     			psFromServer.print("int i = 0;")
     			if(SystemUtils.IS_OS_MAC)
@@ -63,6 +64,7 @@ class JShellSpec extends FlatSpec with Matchers {
     		}
     		else if(message.getStrictText.contains("i ==> 0")){
     			psFromServer.print("int i = 1;")
+    			psFromServer.print("\b")
     			if(SystemUtils.IS_OS_MAC)
     				posFromServer.write(Array[Byte](27,91,50,53,59,57,82))
       		else

@@ -24,14 +24,18 @@ import scala.util.{Success, Failure}
 import com.typesafe.scalalogging.Logger
 import scala.concurrent.ExecutionContext
 import jdk.jshell.spi._
+import akka.http.scaladsl.model.headers.Authorization
+import akka.http.scaladsl.model.headers.RawHeader
+import clients.SidHeader
+import akka.http.scaladsl.model.headers.BasicHttpCredentials
 
-case class WebSocketClient(url: String, key: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext) {
+case class WebSocketClient(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext) {
   def connect(): WSJShell = {
-    WSJShell(url, key)
+    WSJShell(url, sid)
   }
 }
 
-case class WSJShell(url: String, key: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext)  {
+case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext)  {
   val logger = Logger(classOf[WSJShell])
   
   // make Sink with input stream
@@ -67,15 +71,17 @@ case class WSJShell(url: String, key: String)(implicit system: ActorSystem, mate
   }
   
   // make Source with output Stream
-  val wsSource = StreamConverters.asOutputStream().map(bs =>
-    TextMessage(Json.toJson(OutEvent(MessageType.o.toString, bs.utf8String)).toString))
+  val wsSource = StreamConverters.asOutputStream().map(bs => {
+    logger.info(s"out: ${bs.toString}")
+    TextMessage(Json.toJson(OutEvent(MessageType.o.toString, bs.utf8String)).toString)
+  })
   
   // make flow
   val flow = Flow.fromSinkAndSourceMat(wsSink, wsSource)(Keep.right)
   
   // materialized
   val (upgradeResponse, osToServer: OutputStream) =
-      Http().singleWebSocketRequest(WebSocketRequest(url), flow)
+      Http().singleWebSocketRequest(WebSocketRequest(url, extraHeaders = scala.collection.immutable.Seq(Authorization(BasicHttpCredentials("sid",sid)))), flow)
   
   val printStream = new PrintStream(osToServer)
   val connected = upgradeResponse.map { upgrade =>
@@ -97,20 +103,28 @@ case class WSJShell(url: String, key: String)(implicit system: ActorSystem, mate
       }
     })
   private def newJShell(){
-    var t = false;
+    var closeState = false;
 	  Future{
+	    blocking{
   	    val list = java.util.ServiceLoader.load(classOf[jdk.jshell.spi.ExecutionControlProvider], ClassLoader.getSystemClassLoader)
+  	    closeState = true;
   	    list.forEach(e => logger.info("name: " + e.name()))
   	    Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
   	    JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()
   		  close()
+	    }
 	  }
 	  Future{
-	    while(!t){
-       if(printStream.checkError()){
-         logger.info("print stream error")
-       }
-	     Thread.sleep(1000)
+	    blocking{
+	    	while(!closeState) {
+	    		if(printStream.checkError()){
+	    			logger.info("A error occurs in PrintStream. JShell will be terminated")
+	    			posFromServer.write("/exit".getBytes)
+	    			posFromServer.write(getNewLine)
+	    			closeState = true
+	    		}
+	    		Thread.sleep(1000)
+	    	}
 	    }
 	  }
   }

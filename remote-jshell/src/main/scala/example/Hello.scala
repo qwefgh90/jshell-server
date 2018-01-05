@@ -48,7 +48,7 @@ object Hello extends Greeting with App {
   val wsSink: Sink[Message, Future[Done]] = Sink.foreach {
     case message: TextMessage.Strict => {
       //echo
-      print("@"+message.getStrictText)
+      //print("@"+message.getStrictText)
       if(message.getStrictText.contains("Welcome")){
         psFromServer.print("int i = 0;")
         if(SystemUtils.IS_OS_MAC)

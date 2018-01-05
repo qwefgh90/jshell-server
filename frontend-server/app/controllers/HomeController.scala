@@ -1,6 +1,7 @@
 package controllers
 
 import actors.ClientSocketActorFactory
+import play.Logger;
 import actors.JShellLauncher
 import actors.Messages.InEvent
 import actors.Messages.OutEvent
@@ -19,6 +20,7 @@ import play.api.mvc.ControllerComponents
 import play.api.mvc.Request
 import play.api.mvc.WebSocket
 import play.Application
+import scala.concurrent.Future
 
 /**
  * This controller creates an `Action` to handle HTTP requests to the
@@ -27,26 +29,29 @@ import play.Application
 @Singleton
 class HomeController @Inject()(cc: ControllerComponents)(jshellLauncher: JShellLauncher, clientSocketActorFactory: ClientSocketActorFactory, shellSocketActorFactory: ShellSocketActorFactory, config: Configuration)(implicit system: ActorSystem, mat: Materializer) extends AbstractController(cc) {
   def clientws = WebSocket.accept[InEvent, OutEvent] { request =>
+    val sid = request.session.get("sid").getOrElse(java.util.UUID.randomUUID().toString())
+    Logger.debug(s"Current client sid: ${sid}")
     ActorFlow.actorRef { out =>
-      clientSocketActorFactory.props(out, "123")
+      clientSocketActorFactory.props(out, sid)
     }
   }
   
-  def shellws = WebSocket.accept[OutEvent, InEvent] { request =>
-    ActorFlow.actorRef { out =>
-      shellSocketActorFactory.props(out, "123")
-    }
-  }
-  
-  /**
-   * Create an Action to render an HTML page.
-   *
-   * The configuration in the `routes` file means that this method
-   * will be called when the application receives a `GET` request with
-   * a path of `/`.
-   */
-  def index() = Action { implicit request: Request[AnyContent] =>{
-    Ok(views.html.index())
-  }
+  def shellws = WebSocket.acceptOrResult[OutEvent, InEvent] { request =>
+  	 Logger.debug(request.headers.get("Authorization").get.toString())
+  	 Future.successful(
+  	  request.headers.get("Authorization") match {
+  	  case Some(base64Decoded) => Right{
+  	      val sid = akka.http.scaladsl.model.headers.BasicHttpCredentials(base64Decoded.substring(6)).password
+          Logger.debug(s"Current shell sid: ${sid}")
+  		  	ActorFlow.actorRef { out =>
+  		  	shellSocketActorFactory.props(out, sid)
+  		  	}
+  	    }
+  	  case None => {
+          Logger.debug(s"Forbidden. sid header is empty")
+  	      Left(Forbidden)
+  	    }
+  	  }
+		)
   }
 }
