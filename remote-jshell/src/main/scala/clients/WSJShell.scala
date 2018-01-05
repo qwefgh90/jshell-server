@@ -28,6 +28,8 @@ import akka.http.scaladsl.model.headers.Authorization
 import akka.http.scaladsl.model.headers.RawHeader
 import clients.SidHeader
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
+import scala.concurrent.Promise
+import scala.util.Try
 
 case class WebSocketClient(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext) {
   def connect(): WSJShell = {
@@ -37,6 +39,7 @@ case class WebSocketClient(url: String, sid: String)(implicit system: ActorSyste
 
 case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext)  {
   val logger = Logger(classOf[WSJShell])
+  val promise = Promise[Int]()
   
   // make Sink with input stream
   val posFromServer = new PipedOutputStream()
@@ -107,8 +110,8 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
 	  Future{
 	    blocking{
   	    val list = java.util.ServiceLoader.load(classOf[jdk.jshell.spi.ExecutionControlProvider], ClassLoader.getSystemClassLoader)
-  	    closeState = true;
   	    list.forEach(e => logger.info("name: " + e.name()))
+  	    closeState = true;
   	    Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
   	    JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()
   		  close()
@@ -128,6 +131,10 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
 	    }
 	  }
   }
+  
+  def future = {
+    promise.future
+  }
     
   private def getNewLine = { 
     val helperConsoleMacOS = Array[Byte](27,91,50,53,59,57,82)  
@@ -141,5 +148,6 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
     logger.info("Cleaning stream resources and executor")
     pisFromServer.close()
     printStream.close()
+    promise.success(0)
   }
 }

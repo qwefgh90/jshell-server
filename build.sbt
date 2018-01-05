@@ -33,7 +33,7 @@ lazy val frontend_server: Project = (project in file("frontend-server"))
   libraryDependencies += specs2 % Test
 )
 
-lazy val remote_jshell = (project in file("remote-jshell")).dependsOn(common).settings(
+lazy val remote_jshell = (project in file("remote-jshell")).dependsOn(common).enablePlugins(JavaAppPackaging).settings(
   name := "remote-jshell",
   organization := "io.github.qwefgh90",
   scalaVersion := "2.12.3",

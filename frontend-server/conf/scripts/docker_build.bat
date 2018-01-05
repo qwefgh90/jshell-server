@@ -1,0 +1,1 @@
+docker build -t qwefgh90/remote_jshell .
