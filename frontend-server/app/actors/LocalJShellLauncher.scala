@@ -9,13 +9,15 @@ import akka.stream.{ ActorMaterializer, Materializer }
 import scala.concurrent.{ExecutionContext, Future}
 
 class LocalJShellLauncher @Inject()(config: Configuration)(implicit system: ActorSystem, mat: Materializer, ec: ExecutionContext) extends JShellLauncher{
+  lazy override val port = config.getInt("http.port").orElse{
+    if(System.getProperty("http.port") != null) 
+      Some(Integer.parseInt(System.getProperty("http.port"))) 
+    else None
+  }.getOrElse(9000)
   override def launch(key: String): Unit = {
-    val port = config.getInt("http.port").getOrElse(9000)
-    val url = s"ws://localhost:${port}/shellws"
-    println("url: "+ url)
     val client = WebSocketClient(url, key)
     Future{
-      client.connect()
+      client.connect()  
     }
   }
 }

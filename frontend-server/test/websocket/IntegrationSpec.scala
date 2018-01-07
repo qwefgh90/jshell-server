@@ -24,6 +24,11 @@ import actors.Messages._
 import scala.concurrent.ExecutionContext.Implicits.global
 import play.api.libs.json._
 import scala.concurrent.ExecutionContext
+import play.api.inject.guice.GuiceApplicationBuilder
+import controllers.TestSidHandler
+import controllers.SidHandler
+import play.api.inject.bind
+import actors.JShellLauncher
 
 /**
  * Add your spec here.
@@ -33,6 +38,9 @@ import scala.concurrent.ExecutionContext
  */
 class IntegrationSpec extends PlaySpec {
   
+  val testSid = "123"
+  val appBuilder = GuiceApplicationBuilder()
+    .overrides(bind[SidHandler].to(new TestSidHandler(testSid)))
   val jshellLatency = 5000
   
   def connect[T](path: String, port: String, sink: Sink[Message, _], source: Source[Message, T])(implicit system: ActorSystem, mat: Materializer) :T = {
@@ -55,8 +63,9 @@ class IntegrationSpec extends PlaySpec {
     connected.onComplete(println)
     mv
   }
-  
-  "Web socket actors test for graceful termination with /exit" in new WithServer() {
+    
+  "Web socket actors test for graceful termination with /exit" in new WithServer(appBuilder.build()) {
+    System.setProperty("http.port", port.toString)
     val system = this.app.injector.instanceOf[ActorSystem]
     val ec = this.app.injector.instanceOf[ExecutionContext]
     var welcomeMsg = ""
@@ -75,7 +84,7 @@ class IntegrationSpec extends PlaySpec {
     await{
       Future{
         val outputStream = connect("clientws", port.toString, printSink, wsSource)(system, implicitMaterializer)
-        val wsJshell = WebSocketClient(s"ws://localhost:${port}/shellws", "123")(system, implicitMaterializer, ec).connect()
+        Thread.sleep(jshellLatency)
         outputStream.write(Json.toJson(InEvent(MessageType.i.toString, "/exit\n")).toString.getBytes)
         Thread.sleep(jshellLatency)
       }
@@ -87,7 +96,8 @@ class IntegrationSpec extends PlaySpec {
     assert(welcomeMsg.contains("""|  Goodbye"""))
   }
   
-  "Web socket actors test for graceful termination with closing client connection" in new WithServer() {
+  "Web socket actors test for graceful termination with closing client connection" in new WithServer(appBuilder.build()) {
+    System.setProperty("http.port", port.toString)
     val system = this.app.injector.instanceOf[ActorSystem]
     val ec = this.app.injector.instanceOf[ExecutionContext]
     var welcomeMsg = ""
@@ -106,7 +116,6 @@ class IntegrationSpec extends PlaySpec {
     await{
       Future{
         val outputStream = connect("clientws", port.toString, printSink, wsSource)(system, implicitMaterializer)
-        val wsJshell = WebSocketClient(s"ws://localhost:${port}/shellws", "123")(system, implicitMaterializer, ec).connect()
         Thread.sleep(jshellLatency)
         outputStream.close()
         Thread.sleep(jshellLatency)

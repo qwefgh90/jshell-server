@@ -21,18 +21,27 @@ import play.api.mvc.Request
 import play.api.mvc.WebSocket
 import play.Application
 import scala.concurrent.Future
+import java.io.File
+import scala.concurrent.ExecutionContext
 
 /**
  * This controller creates an `Action` to handle HTTP requests to the
  * application's home page.
  */
 @Singleton
-class HomeController @Inject()(cc: ControllerComponents)(jshellLauncher: JShellLauncher, clientSocketActorFactory: ClientSocketActorFactory, shellSocketActorFactory: ShellSocketActorFactory, config: Configuration)(implicit system: ActorSystem, mat: Materializer) extends AbstractController(cc) {
-  def clientws = WebSocket.accept[InEvent, OutEvent] { request =>
-    val sid = request.session.get("sid").getOrElse(java.util.UUID.randomUUID().toString())
-    Logger.debug(s"Current client sid: ${sid}")
-    ActorFlow.actorRef { out =>
-      clientSocketActorFactory.props(out, sid)
+class HomeController @Inject()(cc: ControllerComponents)(jshellLauncher: JShellLauncher, clientSocketActorFactory: ClientSocketActorFactory, shellSocketActorFactory: ShellSocketActorFactory, config: Configuration, sidHandler: SidHandler)(implicit system: ActorSystem, mat: Materializer, ec: ExecutionContext) extends AbstractController(cc) {
+  def clientws = WebSocket.acceptOrResult[InEvent, OutEvent] { implicit request =>
+    val sidOpt = sidHandler.handle(request).toOption
+    Logger.debug(s"Current client ip: ${request.remoteAddress} sid: ${sidOpt}")
+    Future.successful{
+      if(sidOpt.isDefined){
+       Right{
+   	   ActorFlow.actorRef { out =>
+   	     clientSocketActorFactory.props(out, sidOpt.get)
+   	   }}
+      }else{
+        Left(Forbidden)
+      }
     }
   }
   
@@ -53,5 +62,10 @@ class HomeController @Inject()(cc: ControllerComponents)(jshellLauncher: JShellL
   	    }
   	  }
 		)
+  }
+  
+  def root = Action.async{ req =>
+    val sid = req.session.get("sid").getOrElse(java.util.UUID.randomUUID().toString())
+    Assets.at("index.html").apply(req).map(res => res.withSession("sid" -> sid))
   }
 }

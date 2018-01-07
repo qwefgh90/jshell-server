@@ -40,6 +40,7 @@ case class WebSocketClient(url: String, sid: String)(implicit system: ActorSyste
 case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext)  {
   val logger = Logger(classOf[WSJShell])
   val promise = Promise[Int]()
+  logger.debug(s"try to connect to url: ${url}, sid: ${sid}")
   
   // make Sink with input stream
   val posFromServer = new PipedOutputStream()
@@ -49,7 +50,7 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   // mac os
   if(SystemUtils.IS_OS_MAC)
     posFromServer.write(getNewLine)
-  
+    
   val wsSink: Sink[Message, Future[Done]] = Sink.foreach {
     case message: TextMessage.Strict => {
       val jsResult = Json.parse(message.getStrictText).validate[InEvent]
@@ -91,7 +92,7 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
     if (upgrade.response.status == StatusCodes.SwitchingProtocols) {
       upgrade.response.toString
     } else {
-      throw new RuntimeException(s"Connection failed: ${upgrade.response.status}")
+      throw new RuntimeException(s"Connection failed	: ${upgrade.response.status}")
     }
   }
   

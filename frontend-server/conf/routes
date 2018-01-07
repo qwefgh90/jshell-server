@@ -4,7 +4,8 @@
 # ~~~~
 
 # An example controller showing a sample home page
-GET     /                           controllers.Assets.at(file = "index.html")
+GET     /                          controllers.HomeController.root 
+# controllers.Assets.at(file = "index.html")
 GET     /clientws                           controllers.HomeController.clientws
 GET     /shellws                           controllers.HomeController.shellws
 
