@@ -25,19 +25,27 @@ class Module(
   }
   
   def bindingJShellLauncher()(implicit mode: Mode, shellMode: String){
-    if(mode == play.api.Mode.Prod){
-      if(shellMode == "docker")
-        bind(classOf[JShellLauncher])
-          .to(classOf[DockerJShellLauncher])
-      else
+    mode match {
+      case play.api.Mode.Prod => {
+        if(shellMode == "external")
+          bind(classOf[JShellLauncher])
+            .to(classOf[ExternalJShellLauncher])
+        else
+          bind(classOf[JShellLauncher])
+            .to(classOf[LocalJShellLauncher])
+      }
+      case play.api.Mode.Dev => {
+        if(shellMode == "external")
+          bind(classOf[JShellLauncher])
+            .to(classOf[ExternalJShellLauncher])
+        else
+          bind(classOf[JShellLauncher])
+            .to(classOf[LocalJShellLauncher])
+        }
+      case play.api.Mode.Test => {
         bind(classOf[JShellLauncher])
           .to(classOf[LocalJShellLauncher])
-    }else if(mode == play.api.Mode.Dev){
-      bind(classOf[JShellLauncher])
-        .to(classOf[LocalJShellLauncher])
-    }else if(mode == play.api.Mode.Test){
-      bind(classOf[JShellLauncher])
-        .to(classOf[LocalJShellLauncher])
+      }
     }
   }
 }

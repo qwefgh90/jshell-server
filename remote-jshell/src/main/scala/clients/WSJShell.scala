@@ -26,7 +26,6 @@ import scala.concurrent.ExecutionContext
 import jdk.jshell.spi._
 import akka.http.scaladsl.model.headers.Authorization
 import akka.http.scaladsl.model.headers.RawHeader
-import clients.SidHeader
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import scala.concurrent.Promise
 import scala.util.Try
