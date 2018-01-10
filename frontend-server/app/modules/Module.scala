@@ -14,7 +14,7 @@ class Module(
   config: Configuration) extends AbstractModule {
   def configure() = {
     implicit val mode = environment.mode
-    implicit val shellMode = config.getString("custom.shell.mode").getOrElse("none")
+    implicit val shellMode = config.get[String]("shell.mode")
     bindingJShellLauncher()
     bindingSidHandler()
   }

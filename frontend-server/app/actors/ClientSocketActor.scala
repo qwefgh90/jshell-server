@@ -20,7 +20,7 @@ class ClientSocketActor(out: ActorRef, sid: String, config: Configuration, jshel
   import DistributedPubSubMediator.{ Subscribe, SubscribeAck, Publish }
   val mediator = DistributedPubSub(context.system).mediator
   mediator ! Subscribe(sid, self)
-  val jshellTimeout = config.getInt("custom.actor.fsm.initStateTimeout").get
+  val jshellTimeout = config.get[Int]("akka.actor.fsm.init-state-timeout")
   
   this.startWith(Uninitialized, UninitializedData(Vector[InEvent]()), Some(FiniteDuration(jshellTimeout, TimeUnit.MILLISECONDS)))
   

@@ -13,7 +13,7 @@ object EntryPoint {
     val logger = Logger(EntryPoint.getClass)
     implicit val system = ActorSystem("remote-jshell") 
     implicit val mat = ActorMaterializer()
-    val conf = ConfigFactory.load();
+    implicit val conf = ConfigFactory.load()
     val url = conf.getString("url")
     val sid = conf.getString("sid")
     val client = WebSocketClient(url, sid)

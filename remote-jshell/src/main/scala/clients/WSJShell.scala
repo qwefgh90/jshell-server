@@ -29,16 +29,24 @@ import akka.http.scaladsl.model.headers.RawHeader
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import scala.concurrent.Promise
 import scala.util.Try
+import akka.stream.OverflowStrategy
+import scala.concurrent.duration.FiniteDuration
+import java.util.concurrent.TimeUnit
+import akka.stream.ThrottleMode
+import com.typesafe.config.Config
 
-case class WebSocketClient(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext) {
+case class WebSocketClient(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config) {
   def connect(): WSJShell = {
     WSJShell(url, sid)
   }
 }
 
-case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext)  {
+case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config)  {
   val logger = Logger(classOf[WSJShell])
   val promise = Promise[Int]()
+  val bufferSize = config.getInt("shell.buffer-size")
+  val throttlePer = config.getInt("shell.throttle-millisconds")
+  
   logger.debug(s"try to connect to url: ${url}, sid: ${sid}")
   
   // make Sink with input stream
@@ -50,13 +58,24 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   if(SystemUtils.IS_OS_MAC)
     posFromServer.write(getNewLine)
     
-  val wsSink: Sink[Message, Future[Done]] = Sink.foreach {
+  val wsSink: Sink[Message, NotUsed] = Flow[Message]
+  .buffer(bufferSize, OverflowStrategy.fail)
+  .throttle(1, FiniteDuration(throttlePer,TimeUnit.MILLISECONDS), 0, ThrottleMode.shaping)
+  .recover{
+    case th: Throwable =>
+      logger.error("Client source is too much fast", th)
+      posFromServer.write(getNewLine)
+      posFromServer.write("/exit".getBytes)
+      posFromServer.write(getNewLine)
+  }
+  .to(Sink.foreach {
     case message: TextMessage.Strict => {
       val jsResult = Json.parse(message.getStrictText).validate[InEvent]
       if(jsResult.isSuccess){
         val inEvent = jsResult.get
         if(inEvent.t == MessageType.ic.toString && inEvent.m == InternalControlValue.terminate.toString){
           logger.info("Requested to close: {}", inEvent.toString)
+          posFromServer.write(getNewLine)
         	posFromServer.write("/exit".getBytes)
           posFromServer.write(getNewLine)
         }else if(inEvent.t == MessageType.i.toString){
@@ -68,14 +87,15 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
               posFromServer.write(b)
           })
         }
+        posFromServer.flush()
       }else
         logger.error(jsResult.toString)
     }
-  }
+  })
   
   // make Source with output Stream
   val wsSource = StreamConverters.asOutputStream().map(bs => {
-    logger.info(s"out: ${bs.toString}")
+    logger.info(s"shell out: ${bs.utf8String.toString()}")
     TextMessage(Json.toJson(OutEvent(MessageType.o.toString, bs.utf8String)).toString)
   })
   

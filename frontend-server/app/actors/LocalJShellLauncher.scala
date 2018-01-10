@@ -9,6 +9,7 @@ import akka.stream.{ ActorMaterializer, Materializer }
 import scala.concurrent.{ExecutionContext, Future}
 
 class LocalJShellLauncher @Inject()(config: Configuration)(implicit system: ActorSystem, mat: Materializer, ec: ExecutionContext) extends JShellLauncher{
+  implicit val typesafeConfig = config.underlying
   lazy override val port = config.getInt("http.port").orElse{
     if(System.getProperty("http.port") != null) 
       Some(Integer.parseInt(System.getProperty("http.port"))) 

@@ -23,6 +23,7 @@ import play.Application
 import scala.concurrent.Future
 import java.io.File
 import scala.concurrent.ExecutionContext
+import akka.stream.OverflowStrategy
 
 /**
  * This controller creates an `Action` to handle HTTP requests to the
@@ -36,9 +37,9 @@ class HomeController @Inject()(cc: ControllerComponents)(jshellLauncher: JShellL
     Future.successful{
       if(sidOpt.isDefined){
        Right{
-   	   ActorFlow.actorRef { out =>
+   	   ActorFlow.actorRef ({ out =>
    	     clientSocketActorFactory.props(out, sidOpt.get)
-   	   }}
+   	   })}
       }else{
         Left(Forbidden)
       }
@@ -52,9 +53,9 @@ class HomeController @Inject()(cc: ControllerComponents)(jshellLauncher: JShellL
   	  case Some(base64Decoded) => Right{
   	      val sid = akka.http.scaladsl.model.headers.BasicHttpCredentials(base64Decoded.substring(6)).password
           Logger.debug(s"Current shell sid: ${sid}")
-  		  	ActorFlow.actorRef { out =>
-  		  	shellSocketActorFactory.props(out, sid)
-  		  	}
+  		  	ActorFlow.actorRef ({ out =>
+  		  	  shellSocketActorFactory.props(out, sid)
+  		  	})
   	    }
   	  case None => {
           Logger.debug(s"Forbidden. sid header is empty")
@@ -65,7 +66,6 @@ class HomeController @Inject()(cc: ControllerComponents)(jshellLauncher: JShellL
   }
   
   def root = Action.async{ req =>
-    val sid = req.session.get("sid").getOrElse(java.util.UUID.randomUUID().toString())
-    Assets.at("index.html").apply(req).map(res => res.withSession("sid" -> sid))
+    Assets.at("index.html").apply(req).map(res => res.withSession("sid" -> java.util.UUID.randomUUID().toString()))
   }
 }
