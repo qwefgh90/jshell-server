@@ -33,7 +33,14 @@ class ExternalJShellLauncher @Inject()(config: Configuration)(implicit system: A
           Logger.info(r)  
           r = br.readLine()
         }
-        
+      }
+      Future{
+        val br = new BufferedReader(new InputStreamReader(proc.getInputStream))
+        var r = br.readLine()
+        while(r != null){
+          Logger.info(r)  
+          r = br.readLine()
+        }
       }
     }
   }

@@ -16,7 +16,18 @@ object EntryPoint {
     implicit val conf = ConfigFactory.load()
     val url = conf.getString("url")
     val sid = conf.getString("sid")
-    val client = WebSocketClient(url, sid)
-    Await.result(client.connect().future, Duration.Inf)
+    try{
+    	val client = WebSocketClient(url, sid)
+    			Await.result(client.connect().future, Duration.Inf)
+    			logger.info("remote jshell is terminated normally")
+    }finally{
+      system.terminate().onComplete((t) =>{
+        t.map(terminated => {
+            logger.info("actor system is terminated normally: " + terminated.toString())
+        }).failed.map((t)=>{
+          logger.error("stopping actor system failed", t)
+        })
+      })
+    }
   }
 }
