@@ -34,6 +34,8 @@ import scala.concurrent.duration.FiniteDuration
 import java.util.concurrent.TimeUnit
 import akka.stream.ThrottleMode
 import com.typesafe.config.Config
+import java.util.Locale
+import java.nio.charset.Charset
 
 case class WebSocketClient(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config) {
   def connect(): WSJShell = {
@@ -51,7 +53,7 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   
   // make Sink with input stream
   val posFromServer = new PipedOutputStream()
-  val pisFromServer = new PipedInputStream(1024 * 1024) 
+  val pisFromServer = new PipedInputStream(1024 * 1024)
   pisFromServer.connect(posFromServer)
   
   // mac os
@@ -83,8 +85,9 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
           msg.getBytes().foreach(b => {
             if(b == '\n')
               posFromServer.write(getNewLine)
-            else
+            else{
               posFromServer.write(b)
+              }
           })
         }
         posFromServer.flush()
@@ -95,8 +98,8 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   
   // make Source with output Stream
   val wsSource = StreamConverters.asOutputStream().map(bs => {
-    logger.info(s"shell out: ${bs.utf8String.toString()}")
-    TextMessage(Json.toJson(OutEvent(MessageType.o.toString, bs.utf8String)).toString)
+    logger.info(s"shell out(${Charset.defaultCharset().toString}): ${bs.decodeString(Charset.defaultCharset().toString)}")
+    TextMessage(Json.toJson(OutEvent(MessageType.o.toString, bs.decodeString(Charset.defaultCharset().toString))).toString)
   })
   
   // make flow
