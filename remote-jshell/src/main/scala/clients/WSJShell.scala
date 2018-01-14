@@ -1,6 +1,7 @@
 package clients
 
 import java.io.PipedInputStream
+import com.typesafe.config.ConfigFactory
 import org.apache.commons.lang3.SystemUtils
 import java.io.PipedOutputStream
 import java.io.PrintStream
@@ -36,6 +37,8 @@ import akka.stream.ThrottleMode
 import com.typesafe.config.Config
 import java.util.Locale
 import java.nio.charset.Charset
+import com.typesafe.config.ConfigFactory
+import clients.Mode._
 
 case class WebSocketClient(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config) {
   def connect(): WSJShell = {
@@ -46,9 +49,12 @@ case class WebSocketClient(url: String, sid: String)(implicit system: ActorSyste
 case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config)  {
   val logger = Logger(classOf[WSJShell])
   val promise = Promise[Int]()
-  val bufferSize = config.getInt("shell.buffer-size")
-  val throttlePer = config.getInt("shell.throttle-millisconds")
-  
+  val bufferSize = config.getInt("client.buffer-size")
+  val throttlePer = config.getInt("client.throttle-millisconds")
+  val mode = config.getString("client.mode")
+  val customPath = config.getString("client.java-home")
+  val delegateStrategy = config.getString("client.delegate-strategy")
+    
   logger.debug(s"try to connect to url: ${url}, sid: ${sid}")
   
   // make Sink with input stream
@@ -135,9 +141,13 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   	    val list = java.util.ServiceLoader.load(classOf[jdk.jshell.spi.ExecutionControlProvider], ClassLoader.getSystemClassLoader)
   	    list.forEach(e => logger.info("name: " + e.name()))
   	    closeState = true;
+  	    if(customPath != ""){
+  	       logger.info("new java home: " + customPath)
+  	       System.setProperty("java.home", customPath) // change java home
+  	    }else
+  	      logger.info("not found new home")
   	    Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
-  	    JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()
-  		  close()
+  	    JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()  // run new remote java process  		  close()
 	    }
 	  }
 	  Future{
