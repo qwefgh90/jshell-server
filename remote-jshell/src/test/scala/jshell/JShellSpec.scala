@@ -24,16 +24,12 @@ import akka.stream.scaladsl.Flow
 import akka.stream.scaladsl.Keep
 import akka.stream.scaladsl.Sink
 import akka.stream.scaladsl.StreamConverters
-import example.Hello;
 import jdk.jshell.tool.JavaShellToolBuilder
 import org.scalatest.time.Seconds
 import org.scalatest.time.Span
 import org.apache.commons.lang3.SystemUtils
 
 class JShellSpec extends FlatSpec with Matchers {
-  "The Hello object" should "say hello" in {
-    Hello.greeting shouldEqual "hello"
-  }
   "JShell" should "connect to echo server" in {
     implicit val system = ActorSystem()
     implicit val materializer = ActorMaterializer()

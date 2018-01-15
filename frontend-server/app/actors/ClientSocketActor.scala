@@ -22,6 +22,7 @@ class ClientSocketActor(out: ActorRef, sid: String, config: Configuration, jshel
   mediator ! Subscribe(sid, self)
   val jshellTimeout = config.get[Int]("akka.actor.fsm.init-state-timeout")
   
+  
   this.startWith(Uninitialized, UninitializedData(Vector[InEvent]()), Some(FiniteDuration(jshellTimeout, TimeUnit.MILLISECONDS)))
   
   when(Uninitialized) {

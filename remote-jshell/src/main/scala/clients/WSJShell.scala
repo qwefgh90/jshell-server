@@ -1,44 +1,55 @@
 package clients
 
+import java.io.OutputStream
 import java.io.PipedInputStream
-import com.typesafe.config.ConfigFactory
-import org.apache.commons.lang3.SystemUtils
 import java.io.PipedOutputStream
 import java.io.PrintStream
-import akka.actor.ActorSystem
-import akka.stream.{ ActorMaterializer, Materializer }
-import jdk.jshell.tool.JavaShellToolBuilder
-import jdk.jshell.execution.LocalExecutionControlProvider
-import akka.stream.scaladsl.StreamConverters
-import akka.{ Done, NotUsed }
-import akka.http.scaladsl.Http
-import akka.stream.scaladsl._
-import akka.http.scaladsl.model._
-import akka.http.scaladsl.model.ws._
-import scala.concurrent.{Future, blocking}
-import java.io.InputStream
-import java.io.OutputStream
-import java.util.concurrent.Executors
-import actors.Messages._
-import play.api.libs.json._
-import scala.util.{Success, Failure}
-import com.typesafe.scalalogging.Logger
-import scala.concurrent.ExecutionContext
-import jdk.jshell.spi._
-import akka.http.scaladsl.model.headers.Authorization
-import akka.http.scaladsl.model.headers.RawHeader
-import akka.http.scaladsl.model.headers.BasicHttpCredentials
-import scala.concurrent.Promise
-import scala.util.Try
-import akka.stream.OverflowStrategy
-import scala.concurrent.duration.FiniteDuration
-import java.util.concurrent.TimeUnit
-import akka.stream.ThrottleMode
-import com.typesafe.config.Config
-import java.util.Locale
 import java.nio.charset.Charset
-import com.typesafe.config.ConfigFactory
-import clients.Mode._
+import java.util.concurrent.TimeUnit
+
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.concurrent.Promise
+import scala.concurrent.blocking
+import scala.concurrent.duration.FiniteDuration
+import scala.util.Failure
+import scala.util.Success
+
+import org.apache.commons.lang3.SystemUtils
+
+import com.typesafe.config.Config
+import com.typesafe.scalalogging.Logger
+import akka.pattern.{ ask, pipe }
+import actors.Messages.InEvent
+import actors.Messages.InternalControlValue
+import actors.Messages.MessageType
+import actors.Messages.OutEvent
+import actors.Messages.inEventFormat
+import actors.Messages.outEventFormat
+import akka.NotUsed
+import akka.actor.ActorSystem
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.headers.Authorization
+import akka.http.scaladsl.model.headers.BasicHttpCredentials
+import akka.http.scaladsl.model.ws.Message
+import akka.http.scaladsl.model.ws.TextMessage
+import akka.http.scaladsl.model.ws.WebSocketRequest
+import akka.stream.Materializer
+import akka.stream.OverflowStrategy
+import akka.stream.ThrottleMode
+import akka.stream.scaladsl.Flow
+import akka.stream.scaladsl.Keep
+import akka.stream.scaladsl.Sink
+import akka.stream.scaladsl.StreamConverters
+import jdk.jshell.spi.ExecutionControlProvider
+import jdk.jshell.tool.JavaShellToolBuilder
+import play.api.libs.json.Json
+import clients.delegate.JavaBinaryOnwerDelegateRunner
+import java.nio.file.Paths
+import akka.util.Timeout
+import scala.concurrent.duration._
+import scala.concurrent.Await
 
 case class WebSocketClient(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config) {
   def connect(): WSJShell = {
@@ -47,14 +58,26 @@ case class WebSocketClient(url: String, sid: String)(implicit system: ActorSyste
 }
 
 case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config)  {
+  import JavaBinaryOnwerDelegateRunner._
   val logger = Logger(classOf[WSJShell])
   val promise = Promise[Int]()
+  val selectionFuture = system.actorSelection("/user/delegate").resolveOne(10 seconds)
+  val delegateActor = Await.result(selectionFuture.recover{
+    case th => {
+      logger.info("We will create new delegateActor", th)
+      system.actorOf(JavaBinaryOnwerDelegateRunner.props(), name="delegate")
+  }}, Duration(10, TimeUnit.SECONDS))
+  
   val bufferSize = config.getInt("client.buffer-size")
   val throttlePer = config.getInt("client.throttle-millisconds")
   val mode = config.getString("client.mode")
   val customPath = config.getString("client.java-home")
-  val delegateStrategy = config.getString("client.delegate-strategy")
-    
+  var running = false;
+  if(customPath != ""){
+	  logger.info("new java home: " + customPath)
+	  System.setProperty("java.home", customPath) // change java home
+  }else
+	  logger.info("not found new home")
   logger.debug(s"try to connect to url: ${url}, sid: ${sid}")
   
   // make Sink with input stream
@@ -65,7 +88,7 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   // mac os
   if(SystemUtils.IS_OS_MAC)
     posFromServer.write(getNewLine)
-    
+  
   val wsSink: Sink[Message, NotUsed] = Flow[Message]
   .buffer(bufferSize, OverflowStrategy.fail)
   .throttle(1, FiniteDuration(throttlePer,TimeUnit.MILLISECONDS), 0, ThrottleMode.shaping)
@@ -104,7 +127,17 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   
   // make Source with output Stream
   val wsSource = StreamConverters.asOutputStream().map(bs => {
-    logger.info(s"shell out(${Charset.defaultCharset().toString}): ${bs.decodeString(Charset.defaultCharset().toString)}")
+    implicit val timeout = Timeout(20 seconds) 
+    logger.debug(s"shell out(${Charset.defaultCharset().toString}): ${bs.decodeString(Charset.defaultCharset().toString)}")
+    if(running == false){
+    	val future = delegateActor ? Cleaning()
+    	future.onComplete((result) => {
+    	  result.recover{
+    	    case ex: Exception => logger.error("cleaning error", ex)
+    	  }
+    	})
+    	running = true
+    }
     TextMessage(Json.toJson(OutEvent(MessageType.o.toString, bs.decodeString(Charset.defaultCharset().toString))).toString)
   })
   
@@ -134,22 +167,27 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
         close()
       }
     })
+    
   private def newJShell(){
     var closeState = false;
-	  Future{
-	    blocking{
-  	    val list = java.util.ServiceLoader.load(classOf[jdk.jshell.spi.ExecutionControlProvider], ClassLoader.getSystemClassLoader)
-  	    list.forEach(e => logger.info("name: " + e.name()))
-  	    closeState = true;
-  	    if(customPath != ""){
-  	       logger.info("new java home: " + customPath)
-  	       System.setProperty("java.home", customPath) // change java home
-  	    }else
-  	      logger.info("not found new home")
-  	    Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
-  	    JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()  // run new remote java process  		  close()
-	    }
-	  }
+    implicit val timeout = Timeout(20 seconds) 
+    logger.info("new shell start")
+  	val future = delegateActor ? Delegate("jshell_", Paths.get(customPath))
+  	future.onComplete((newIdTry) => {
+  	  newIdTry.map{newId =>
+  	    if(newId != "")
+    	    logger.info(s"$newId is create.")
+    	  Future{
+  	      blocking{
+             val list = java.util.ServiceLoader.load(classOf[jdk.jshell.spi.ExecutionControlProvider], ClassLoader.getSystemClassLoader)
+             list.forEach(e => logger.info("name: " + e.name()))
+             Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
+             JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()
+             closeState = true
+  	      }
+  	    }
+  	  }.recover{case ex: Exception => logger.error("delegate is failed", ex)}
+  	})
 	  Future{
 	    blocking{
 	    	while(!closeState) {
