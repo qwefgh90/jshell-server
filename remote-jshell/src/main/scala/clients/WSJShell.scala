@@ -183,10 +183,19 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
              list.forEach(e => logger.info("name: " + e.name()))
              Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
              JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()
+             close()
              closeState = true
   	      }
-  	    }
-  	  }.recover{case ex: Exception => logger.error("delegate is failed", ex)}
+  	    }.recover{case ex: Exception => {
+    	      logger.error("jshell is failed", ex)
+    	      close()
+    	    }
+    	  }
+  	  }.recover{case ex: Exception => {
+    	    logger.error("delegate is failed", ex)
+    	    close()
+    	  }
+    	}
   	})
 	  Future{
 	    blocking{

@@ -67,10 +67,14 @@ class JavaBinaryOnwerDelegateRunner()
       list :+ runtime.exec(s"useradd $newId")
       val script = s"""su -s /bin/bash $newId""" + " -c \"" + tempJavaPath.toString() +" $1 $2 $3 $4 $5 $6 $7 $8 $9 $10 $11 $12 $13\" "
       //2) backup binary
-      if(!Files.exists(tempJavaPath))
-        list :+ runtime.exec(s"cp ${javaPath.toString()} ${tempJavaPath.toString()}")
+      if(!Files.exists(tempJavaPath)){
+        list :+ runtime.exec(s"cp -n ${javaPath.toString()} ${tempJavaPath.toString()}")
+        list :+ runtime.exec(s"rm -f ${javaPath.toString()}")
+      }
       //3) create new script
+      Thread.sleep(1000)
       Files.write(javaPath, script.getBytes)
+      list :+ runtime.exec(s"chmod +x ${javaPath.toString()}")
       log.info("setup info \n" + list.mkString("\n"))
       newId
     }else

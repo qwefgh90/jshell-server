@@ -19,6 +19,7 @@ import clients.Mode._
 import java.nio.file.Files
 import akka.stream.Materializer
 import com.typesafe.config.Config
+import java.io.BufferedReader
 
 object EntryPoint {
   val logger = Logger(EntryPoint.getClass)
@@ -29,9 +30,9 @@ object EntryPoint {
    * 3) connect to jshell-server
    */
   def runMultiple()(implicit system: ActorSystem, mat: Materializer, conf: Config) {
-    val watchPath = conf.getString("client.mode.multiple-watch-path")
+    val watchPath = conf.getString("client.multiple-watch-path")
     if(watchPath == "")
-      throw new RuntimeException("client.mode.multiple-watch-path is empty string")
+      throw new RuntimeException("client.multiple-watch-path is empty string")
     else{
       //detect directory changes
       val watcher = FileSystems.getDefault().newWatchService()
@@ -45,28 +46,37 @@ object EntryPoint {
           val kind = event.kind()
           if(kind != OVERFLOW){
             val ev = event.asInstanceOf[WatchEvent[Path]]
-            val newPath = ev.context()
-            val br = Files.newBufferedReader(newPath)
-            try{
-              val keyValueList = Stream.continually(br.readLine).takeWhile(_ != null).map(s => s.splitAt(s.charAt('=')))
-              .foldLeft(Map[String, String]())((m: Map[String, String], tu) => {
-                m + (tu._1 -> tu._2)
-              })
-              val urlOpt = keyValueList.get("url")
-              val sidOpt = keyValueList.get("sid")
-              val futureOpt = urlOpt.map(url => sidOpt.map(sid => {
-       	        val client = WebSocketClient(urlOpt.get, sidOpt.get)
-       	        client.connect().future 
-              }))
-              if(futureOpt.isEmpty)  
-                logger.warn(s"A sid or url is missing in ${newPath.toString()}")
-            }catch{
-              case e:Exception => {
-                logger.error("A error occurs while reading new file.", e)
+            val newPath = path.resolve(ev.context().getFileName)
+            logger.info("new file : "+ newPath.toAbsolutePath().toString())
+            if(newPath.getFileName.toString == "STOP"){
+              stopFlag = true
+            }else{
+              var br: BufferedReader = null;
+              try{
+                Thread.sleep(500)
+                br = Files.newBufferedReader(newPath)
+                val keyValueList = Stream.continually(br.readLine).takeWhile(_ != null).map(s => s.splitAt(s.indexOf('=')))
+                .foldLeft(Map[String, String]())((m: Map[String, String], tu) => {
+                  m + (tu._1 -> tu._2.drop(1))
+                })
+                val urlOpt = keyValueList.get("url")
+                val sidOpt = keyValueList.get("sid")
+                val futureOpt = urlOpt.map(url => sidOpt.map(sid => {
+       	          val client = WebSocketClient(urlOpt.get, sidOpt.get)
+       	          client.connect().future 
+                }))
+                if(futureOpt.isEmpty)  
+                  logger.warn(s"A sid or url is missing in ${newPath.toString()}")
+              }catch{
+                case e:Exception => {
+                  logger.error("A error occurs while reading new file.", e)
+                }
+              }finally{
+                if(br != null)
+                  br.close()
               }
-            }finally{
-              br.close()
             }
+            Files.delete(newPath)
           }
         })
         val vaild = key.reset()
@@ -80,13 +90,15 @@ object EntryPoint {
     implicit val system = ActorSystem("remote-jshell") 
     implicit val mat = ActorMaterializer()
     implicit val conf = ConfigFactory.load()
-    val url = conf.getString("url")
-    val sid = conf.getString("sid")
     val mode = conf.getString("client.mode")
     try{
-      if(mode == Mode.Multiple){
+      logger.info(s"current mode: ${mode.toString()}")
+      logger.info(s"current mode: ${Mode.multiple.toString()}")
+      if(mode == Mode.multiple.toString()){
         runMultiple()
       }else {
+        val url = conf.getString("url")
+        val sid = conf.getString("sid")
        	val client = WebSocketClient(url, sid)
        	Await.result(client.connect().future, Duration.Inf)
        	logger.info("remote jshell is terminated normally")
