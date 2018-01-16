@@ -25,23 +25,6 @@ class ExternalJShellLauncher @Inject()(config: Configuration)(implicit system: A
         
       val proc = Runtime.getRuntime.exec(command)
       Logger.info(s"Remote JShell information (${proc.pid()}) \n ${proc.info().toString()} \n command: ${command}")
-        
-      Future{
-        val br = new BufferedReader(new InputStreamReader(proc.getErrorStream))
-        var r = br.readLine()
-        while(r != null){
-          Logger.info(r)  
-          r = br.readLine()
-        }
-      }
-      Future{
-        val br = new BufferedReader(new InputStreamReader(proc.getInputStream))
-        var r = br.readLine()
-        while(r != null){
-          Logger.info(r)  
-          r = br.readLine()
-        }
-      }
     }
   }
 }
