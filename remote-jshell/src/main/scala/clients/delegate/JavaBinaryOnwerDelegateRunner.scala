@@ -71,7 +71,7 @@ class JavaBinaryOnwerDelegateRunner()
             .thenApply[List[Process]]((proc) => (proc :: Nil))
       //useradd.waitFor(2000, TimeUnit.SECONDS)
       //list :+ useradd.info()
-      val script = s"""su -s /bin/sh $newId""" + " -c \"" + tempJavaPath.toString() +" $1 $2 $3 $4 $5 $6 $7 $8 $9 $10 $11 $12 $13\" "
+      val script = s"""su -s /bin/sh $newId""" + " -c \"cd /home/" + newId + " && " + tempJavaPath.toString() +" $1 $2 $3 $4 $5 $6 $7 $8 $9 $10 $11 $12 $13\" "
       //2) backup binary
       if(!Files.exists(tempJavaPath)){
         future = future.thenCompose((list) => runtime.exec(s"cp -n ${javaPath.toString()} ${tempJavaPath.toString()}").onExit()
@@ -132,24 +132,17 @@ class JavaBinaryOnwerDelegateRunner()
   def doDeleteUser(id: String){
     if(SystemUtils.IS_OS_LINUX){
       val br = new BufferedReader(new InputStreamReader(runtime.exec(s"userdel $id").getErrorStream))
-      val error = br.readLine()
-      if(error != null){
+      var error = br.readLine()
+      br.close()
+      while(error != null){
         log.debug(s"kill ${error.split(" ").last} and userdel ${id}")
         var future = runtime.exec(s"kill ${error.split(" ").last}").onExit().orTimeout(3000, TimeUnit.MILLISECONDS)
                     .thenApply[List[Process]]((proc) => (proc :: Nil))
-        future = future.thenCompose((list) => runtime.exec(s"userdel -f $id").onExit().orTimeout(3000, TimeUnit.MILLISECONDS)
-                    .thenApply[List[Process]]((proc) => (proc :: list)))
-        try{
-          val success = future.get(6000, TimeUnit.MILLISECONDS)
-          log.info("delete info \n" + success.map(_.toString()).mkString("\n"))
-        }catch{
-          case e => {
-            log.error(e, "A error occurs during delete.")
-          }
-        }
-      }else{
-        log.info("delete info \n" + id)
+        val br = new BufferedReader(new InputStreamReader(runtime.exec(s"userdel $id").getErrorStream))
+        error = br.readLine()
+        br.close()
       }
+      log.info("delete info $id\n")
     }
   }
   

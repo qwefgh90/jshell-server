@@ -5,12 +5,15 @@ import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import java.io.PrintStream
 import java.nio.charset.Charset
+import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 
+import scala.concurrent.Await
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.concurrent.blocking
+import scala.concurrent.duration._
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Failure
 import scala.util.Success
@@ -19,7 +22,7 @@ import org.apache.commons.lang3.SystemUtils
 
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.Logger
-import akka.pattern.{ ask, pipe }
+
 import actors.Messages.InEvent
 import actors.Messages.InternalControlValue
 import actors.Messages.MessageType
@@ -35,6 +38,7 @@ import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.model.ws.Message
 import akka.http.scaladsl.model.ws.TextMessage
 import akka.http.scaladsl.model.ws.WebSocketRequest
+import akka.pattern.ask
 import akka.stream.Materializer
 import akka.stream.OverflowStrategy
 import akka.stream.ThrottleMode
@@ -42,14 +46,11 @@ import akka.stream.scaladsl.Flow
 import akka.stream.scaladsl.Keep
 import akka.stream.scaladsl.Sink
 import akka.stream.scaladsl.StreamConverters
+import akka.util.Timeout
+import clients.delegate.JavaBinaryOnwerDelegateRunner
 import jdk.jshell.spi.ExecutionControlProvider
 import jdk.jshell.tool.JavaShellToolBuilder
 import play.api.libs.json.Json
-import clients.delegate.JavaBinaryOnwerDelegateRunner
-import java.nio.file.Paths
-import akka.util.Timeout
-import scala.concurrent.duration._
-import scala.concurrent.Await
 
 case class WebSocketClient(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config) {
   def connect(): WSJShell = {
@@ -58,7 +59,7 @@ case class WebSocketClient(url: String, sid: String)(implicit system: ActorSyste
 }
 
 case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config)  {
-  import JavaBinaryOnwerDelegateRunner._
+  import clients.delegate.JavaBinaryOnwerDelegateRunner._
   val logger = Logger(classOf[WSJShell])
   val promise = Promise[Int]()
   val selectionFuture = system.actorSelection("/user/delegate").resolveOne(10 seconds)
@@ -115,9 +116,8 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
           msg.getBytes().foreach(b => {
             if(b == '\n')
               posFromServer.write(getNewLine)
-            else{
+            else
               posFromServer.write(b)
-              }
           })
         }
         posFromServer.flush()
@@ -172,7 +172,7 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   private def newJShell(){
     var closeState = false;
     implicit val timeout = Timeout(20 seconds) 
-    logger.info("New jshell started")
+    logger.info("New jshell started.")
   	val future = delegateActor ? Delegate("jshell_", Paths.get(customPath))
   	future.onComplete((newIdTry) => {
   	  newIdTry.map{newId =>
@@ -183,9 +183,7 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
              val list = java.util.ServiceLoader.load(classOf[jdk.jshell.spi.ExecutionControlProvider], ClassLoader.getSystemClassLoader)
              list.forEach(e => logger.info("name: " + e.name()))
              Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
-             val home = if(SystemUtils.IS_OS_LINUX) Paths.get("/home").resolve(newId.toString)
-               else System.getProperty("user.dir")
-             JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run(s"-R -Xmx${xmx} -Duser.dir=${home}")
+             JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run(s"-R -Xmx${xmx}")
              close(Some(newId.toString))
              closeState = true
   	      }
@@ -220,7 +218,7 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   def future = {
     promise.future
   }
-    
+  
   private def getNewLine = {
     val helperConsoleMacOS = Array[Byte](27,91,50,53,59,57,82)  
     if(SystemUtils.IS_OS_MAC){
