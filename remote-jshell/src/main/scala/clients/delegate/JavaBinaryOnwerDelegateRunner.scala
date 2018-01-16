@@ -15,10 +15,14 @@ import java.lang.ProcessHandle.Info
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.UUID
+import java.util.concurrent.TimeUnit
+import scala.concurrent.Await
+import java.util.concurrent.CompletableFuture
 
 object JavaBinaryOnwerDelegateRunner{
 	final case class Delegate(id: String, javaHome: Path)
 	final case class Cleaning()
+	final case class DeleteUser(id: String)
 	
 	sealed trait State
 	case object Ready extends State
@@ -37,7 +41,7 @@ class JavaBinaryOnwerDelegateRunner()
   //override def preStart(): Unit = log.info("RemoteJShellRunner started")
   //override def postStop(): Unit = log.info("RemoteJShellRunner stopped")
   val runtime = Runtime.getRuntime
-
+  
   import JavaBinaryOnwerDelegateRunner._
   startWith(Ready, Uninitialized)
   val temporaryFileNameForLinux = "safejava"
@@ -62,21 +66,38 @@ class JavaBinaryOnwerDelegateRunner()
       val newId: String = generateId(id)
       val javaPath = javaHome.resolve("bin").resolve("java")
       val tempJavaPath = javaHome.resolve("bin").resolve("safejava")
-      val list = scala.collection.mutable.Seq[Info]()
       //1) useradd
-      list :+ runtime.exec(s"useradd $newId")
-      val script = s"""su -s /bin/bash $newId""" + " -c \"" + tempJavaPath.toString() +" $1 $2 $3 $4 $5 $6 $7 $8 $9 $10 $11 $12 $13\" "
+      var future = runtime.exec(s"useradd $newId").onExit()
+            .thenApply[List[Process]]((proc) => (proc :: Nil))
+      //useradd.waitFor(2000, TimeUnit.SECONDS)
+      //list :+ useradd.info()
+      val script = s"""su -s /bin/sh $newId""" + " -c \"" + tempJavaPath.toString() +" $1 $2 $3 $4 $5 $6 $7 $8 $9 $10 $11 $12 $13\" "
       //2) backup binary
       if(!Files.exists(tempJavaPath)){
-        list :+ runtime.exec(s"cp -n ${javaPath.toString()} ${tempJavaPath.toString()}")
-        list :+ runtime.exec(s"rm -f ${javaPath.toString()}")
+        future = future.thenCompose((list) => runtime.exec(s"cp -n ${javaPath.toString()} ${tempJavaPath.toString()}").onExit()
+              .thenApply[List[Process]]((proc) => (proc :: list)))
+        future = future.thenCompose((list) => runtime.exec(s"rm -f ${javaPath.toString()}").onExit()
+              .thenApply[List[Process]]((proc) => (proc :: list)))
       }
       //3) create new script
-      Thread.sleep(1000)
-      Files.write(javaPath, script.getBytes)
-      list :+ runtime.exec(s"chmod +x ${javaPath.toString()}")
-      log.info("setup info \n" + list.mkString("\n"))
-      newId
+      future = future.thenCompose((list) => {
+        CompletableFuture.supplyAsync(() => {
+          Files.write(javaPath, script.getBytes)
+          list
+        })
+      })
+      future = future.thenCompose((list) => runtime.exec(s"chmod +x ${javaPath.toString()}").onExit()
+            .thenApply[List[Process]]((proc) => (proc :: list)))
+      try{
+        val success = future.get(60000, TimeUnit.MILLISECONDS)
+        log.info("setup info \n" + success.map(_.toString()).mkString("\n"))
+        newId
+      }catch{
+        case e => {
+          log.error(e, "A error occurs during setup.")
+          ""
+        }
+      }
     }else
       ""
   }
@@ -87,13 +108,49 @@ class JavaBinaryOnwerDelegateRunner()
       val tempJavaPath = javaHome.resolve("bin").resolve("safejava")
       //1) remove new script
       //2) recover binary
-      //3) userdel
-      val list = List(runtime.exec(s"rm -f ${javaPath.toString()}").info(),
-      runtime.exec(s"cp ${tempJavaPath.toString} ${javaPath.toString}").info(),
-      runtime.exec(s"userdel $id").info())
-      log.info("clean info \n" + list.mkString("\n"))
+      var future = runtime.exec(s"rm -f ${javaPath.toString()}").onExit().orTimeout(1000, TimeUnit.MILLISECONDS)
+            .thenApply[List[Process]]((proc) => (proc :: Nil))
+      future = future.thenCompose((list) => {
+        runtime.exec(s"cp ${tempJavaPath.toString} ${javaPath.toString}")
+        .onExit().orTimeout(1000, TimeUnit.MILLISECONDS)
+        .thenApply[List[Process]]((proc) => (proc :: list))
+      })
+      try{
+        val success = future.get(3000, TimeUnit.MILLISECONDS)
+        log.info("clean info \n" + success.map(_.toString()).mkString("\n"))
+        id
+      }catch{
+        case e => {
+          log.error(e, "A error occurs during clean.")
+          ""
+        }
+      }
+    }else
+      ""
+  }
+  
+  def doDeleteUser(id: String){
+    if(SystemUtils.IS_OS_LINUX){
+      val br = new BufferedReader(new InputStreamReader(runtime.exec(s"userdel $id").getErrorStream))
+      val error = br.readLine()
+      if(error != null){
+        log.debug(s"kill ${error.split(" ").last} and userdel ${id}")
+        var future = runtime.exec(s"kill ${error.split(" ").last}").onExit().orTimeout(3000, TimeUnit.MILLISECONDS)
+                    .thenApply[List[Process]]((proc) => (proc :: Nil))
+        future = future.thenCompose((list) => runtime.exec(s"userdel -f $id").onExit().orTimeout(3000, TimeUnit.MILLISECONDS)
+                    .thenApply[List[Process]]((proc) => (proc :: list)))
+        try{
+          val success = future.get(6000, TimeUnit.MILLISECONDS)
+          log.info("delete info \n" + success.map(_.toString()).mkString("\n"))
+        }catch{
+          case e => {
+            log.error(e, "A error occurs during delete.")
+          }
+        }
+      }else{
+        log.info("delete info \n" + id)
+      }
     }
-    id
   }
   
   when(Ready){
@@ -126,6 +183,10 @@ class JavaBinaryOnwerDelegateRunner()
   }
   
   whenUnhandled {
+    case Event(DeleteUser(id), _) => {
+      doDeleteUser(id)
+      stay
+    }
     case Event(e, d) => {
       log.debug("received unhandled request {} in state {}/{}", e, stateName, d)
       stay

@@ -72,6 +72,7 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   val throttlePer = config.getInt("client.throttle-millisconds")
   val mode = config.getString("client.mode")
   val customPath = config.getString("client.java-home")
+  val xmx = config.getString("client.shell.jvm.xmx")
   var running = false;
   if(customPath != ""){
 	  logger.info("new java home: " + customPath)
@@ -164,14 +165,14 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
       }
       case Failure(e) => {
         logger.error("Failed to connection", e)
-        close()
+        close(None)
       }
     })
     
   private def newJShell(){
     var closeState = false;
     implicit val timeout = Timeout(20 seconds) 
-    logger.info("new shell start")
+    logger.info("New jshell started")
   	val future = delegateActor ? Delegate("jshell_", Paths.get(customPath))
   	future.onComplete((newIdTry) => {
   	  newIdTry.map{newId =>
@@ -182,18 +183,22 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
              val list = java.util.ServiceLoader.load(classOf[jdk.jshell.spi.ExecutionControlProvider], ClassLoader.getSystemClassLoader)
              list.forEach(e => logger.info("name: " + e.name()))
              Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
-             JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run()
-             close()
+             val home = if(SystemUtils.IS_OS_LINUX) Paths.get("/home").resolve(newId.toString)
+               else System.getProperty("user.dir")
+             JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run(s"-R -Xmx${xmx} -Duser.dir=${home}")
+             close(Some(newId.toString))
              closeState = true
   	      }
   	    }.recover{case ex: Exception => {
-    	      logger.error("jshell is failed", ex)
-    	      close()
+    	      logger.error("starting jshell is failed", ex)
+    	      close(Some(newId.toString))
+            closeState = true
     	    }
     	  }
   	  }.recover{case ex: Exception => {
-    	    logger.error("delegate is failed", ex)
-    	    close()
+    	    logger.error("delegating is failed", ex)
+    	    close(None)
+          closeState = true
     	  }
     	}
   	})
@@ -216,7 +221,7 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
     promise.future
   }
     
-  private def getNewLine = { 
+  private def getNewLine = {
     val helperConsoleMacOS = Array[Byte](27,91,50,53,59,57,82)  
     if(SystemUtils.IS_OS_MAC){
     	Array[Byte](10) ++ helperConsoleMacOS
@@ -224,10 +229,11 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
     	Array[Byte](10)
   }
   
-  protected def close() = {
-    logger.info("Cleaning stream resources and executor")
+  protected def close(idOpt: Option[String]) = {
+    idOpt.map(id => delegateActor ! DeleteUser(id))
     pisFromServer.close()
     printStream.close()
     promise.success(0)
+    logger.info("Cleaning stream resources and executor")
   }
 }

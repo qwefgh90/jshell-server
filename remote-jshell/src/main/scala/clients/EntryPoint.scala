@@ -92,8 +92,7 @@ object EntryPoint {
     implicit val conf = ConfigFactory.load()
     val mode = conf.getString("client.mode")
     try{
-      logger.info(s"current mode: ${mode.toString()}")
-      logger.info(s"current mode: ${Mode.multiple.toString()}")
+      logger.info(s"current running mode: ${mode.toString()}")
       if(mode == Mode.multiple.toString()){
         runMultiple()
       }else {

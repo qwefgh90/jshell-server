@@ -24,6 +24,7 @@
   </appender>
   
   <logger name="clients" level="DEBUG" />
+  <logger name="clients.delegate" level="DEBUG" />
 
   <!-- Off these ones as they are annoying, and anyway we manage configuration ourselves -->
   <logger name="com.avaje.ebean.config.PropertyMapLoader" level="OFF" />
@@ -31,7 +32,7 @@
   <logger name="com.avaje.ebeaninternal.server.lib.BackgroundThread" level="OFF" />
   <logger name="com.gargoylesoftware.htmlunit.javascript" level="OFF" />
 
-  <root level="WARN">
+  <root level="INFO">
     <!--<appender-ref ref="ASYNCFILE" />-->
     <appender-ref ref="ASYNCSTDOUT" />
   </root>
