@@ -15,6 +15,7 @@ lazy val common = (project in file("common")).
     libraryDependencies += "com.typesafe.akka" %% "akka-http" % "10.0.11",
     libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % "10.0.11" % Test,  
     libraryDependencies += "org.apache.commons" % "commons-lang3" % "3.4",
+    libraryDependencies += "net.sourceforge.pro-grade" % "pro-grade" % "1.1.1",
     libraryDependencies += scalaTest % Test
 )
 

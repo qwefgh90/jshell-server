@@ -51,6 +51,9 @@ import clients.delegate.JavaBinaryOnwerDelegateRunner
 import jdk.jshell.spi.ExecutionControlProvider
 import jdk.jshell.tool.JavaShellToolBuilder
 import play.api.libs.json.Json
+import net.sourceforge.prograde.sm._
+import clients.security.JShellSecurityManager
+import java.util.concurrent.Executors
 
 case class WebSocketClient(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config) {
   def connect(): WSJShell = {
@@ -61,6 +64,7 @@ case class WebSocketClient(url: String, sid: String)(implicit system: ActorSyste
 case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config)  {
   import clients.delegate.JavaBinaryOnwerDelegateRunner._
   val logger = Logger(classOf[WSJShell])
+  val singleEc = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor)
   val promise = Promise[Int]()
   val selectionFuture = system.actorSelection("/user/delegate").resolveOne(10 seconds)
   val delegateActor = Await.result(selectionFuture.recover{
@@ -74,7 +78,8 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   val mode = config.getString("client.mode")
   val customPath = config.getString("client.java-home")
   val xmx = config.getString("client.shell.jvm.xmx")
-  var running = false;
+  var cleaned = false;
+  var closed = false;
   if(customPath != ""){
 	  logger.info("new java home: " + customPath)
 	  System.setProperty("java.home", customPath) // change java home
@@ -130,14 +135,14 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   val wsSource = StreamConverters.asOutputStream().map(bs => {
     implicit val timeout = Timeout(20 seconds) 
     logger.debug(s"shell out(${Charset.defaultCharset().toString}): ${bs.decodeString(Charset.defaultCharset().toString)}")
-    if(running == false){
+    if(cleaned == false){
     	val future = delegateActor ? Cleaning()
     	future.onComplete((result) => {
     	  result.recover{
     	    case ex: Exception => logger.error("cleaning error", ex)
     	  }
     	})
-    	running = true
+    	cleaned = true
     }
     TextMessage(Json.toJson(OutEvent(MessageType.o.toString, bs.decodeString(Charset.defaultCharset().toString))).toString)
   })
@@ -170,7 +175,6 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
     })
     
   private def newJShell(){
-    var closeState = false;
     implicit val timeout = Timeout(20 seconds) 
     logger.info("New jshell started.")
   	val future = delegateActor ? Delegate("jshell_", Paths.get(customPath))
@@ -180,39 +184,43 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
     	    logger.info(s"$newId is create.")
     	  Future{
   	      blocking{
-             val list = java.util.ServiceLoader.load(classOf[jdk.jshell.spi.ExecutionControlProvider], ClassLoader.getSystemClassLoader)
-             list.forEach(e => logger.info("name: " + e.name()))
-             Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
-             JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run(s"-R -Xmx${xmx}")
-             close(Some(newId.toString))
-             closeState = true
+  	        if(System.getSecurityManager != null){
+  	          System.getSecurityManager.asInstanceOf[JShellSecurityManager].enable()
+  	          System.getSecurityManager.asInstanceOf[JShellSecurityManager].setAllowPaths(List(Paths.get(s"/home/${newIdTry}")))
+  	        }
+            val list = java.util.ServiceLoader.load(classOf[jdk.jshell.spi.ExecutionControlProvider], ClassLoader.getSystemClassLoader)
+            list.forEach(e => logger.info("name: " + e.name()))
+            Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
+            JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run(s"-R -Xmx${xmx}")
+            close(Some(newId.toString))
   	      }
-  	    }.recover{case ex: Exception => {
+  	    }(singleEc).recover{case ex: Exception => {
     	      logger.error("starting jshell is failed", ex)
     	      close(Some(newId.toString))
-            closeState = true
+    	    }
+    	  }
+    	  Future{
+    	    blocking{
+    	    	while(!closed) {
+    	    		if(printStream.checkError()){
+    	    			logger.info("A error occurs in PrintStream. JShell will be terminated")
+    	    			posFromServer.write("/exit".getBytes)
+    	    			posFromServer.write(getNewLine)
+    	    		}
+    	    		Thread.sleep(2000)
+    	    	}
+    	    	//terminate eventually
+    	    	Thread.sleep(10000)
+            close(Some(newId.toString))
     	    }
     	  }
   	  }.recover{case ex: Exception => {
     	    logger.error("delegating is failed", ex)
     	    close(None)
-          closeState = true
+          closed = true
     	  }
     	}
   	})
-	  Future{
-	    blocking{
-	    	while(!closeState) {
-	    		if(printStream.checkError()){
-	    			logger.info("A error occurs in PrintStream. JShell will be terminated")
-	    			posFromServer.write("/exit".getBytes)
-	    			posFromServer.write(getNewLine)
-	    			closeState = true
-	    		}
-	    		Thread.sleep(1000)
-	    	}
-	    }
-	  }
   }
   
   def future = {
@@ -228,10 +236,14 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
   }
   
   protected def close(idOpt: Option[String]) = {
-    idOpt.map(id => delegateActor ! DeleteUser(id))
-    pisFromServer.close()
-    printStream.close()
-    promise.success(0)
-    logger.info("Cleaning stream resources and executor")
+    if(closed == false){
+      closed = true
+      idOpt.map(id => delegateActor ! DeleteUser(id))
+      pisFromServer.close()
+      printStream.close()
+      singleEc.awaitTermination(10, TimeUnit.SECONDS)
+      promise.success(0)
+      logger.info("Cleaning stream resources and executor")
+    }
   }
 }

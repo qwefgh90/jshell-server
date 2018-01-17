@@ -1,0 +1,15 @@
+/* AUTOMATICALLY GENERATED ON Wed Jan 17 14:32:21 KST 2018*/
+/* DO NOT EDIT */
+priority "grant";
+
+grant {
+  permission java.io.FilePermission "c:\\users\\-", "read";
+  permission java.io.FilePermission "C:\\Program Files\\-", "read";
+  permission java.io.FilePermission "C:\\etc\\-", "read";
+  permission java.io.FilePermission "c:\\workspace\\-", "read,write";
+  permission java.io.FilePermission "c:\\users\\ccw.ext\\-", "read,write";
+};
+
+deny{
+  permission java.io.FilePermission "c:\\-", "read,write";
+};
