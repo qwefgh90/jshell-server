@@ -54,6 +54,7 @@ import play.api.libs.json.Json
 import net.sourceforge.prograde.sm._
 import clients.security.JShellSecurityManager
 import java.util.concurrent.Executors
+import java.util.prefs.Preferences
 
 case class WebSocketClient(url: String, sid: String)(implicit system: ActorSystem, materializer: Materializer, ec: ExecutionContext, config: Config) {
   def connect(): WSJShell = {
@@ -191,7 +192,10 @@ case class WSJShell(url: String, sid: String)(implicit system: ActorSystem, mate
             val list = java.util.ServiceLoader.load(classOf[jdk.jshell.spi.ExecutionControlProvider], ClassLoader.getSystemClassLoader)
             list.forEach(e => logger.info("name: " + e.name()))
             Thread.currentThread().setContextClassLoader(ClassLoader.getSystemClassLoader)
-            JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).run(s"-R -Xmx${xmx}")
+            val pref = Preferences.userRoot().node(newId.toString)
+            
+            JavaShellToolBuilder.builder().in(pisFromServer, null).out(printStream).persistence(pref)
+                .run(s"-R -Xmx${xmx}")
             close(Some(newId.toString))
   	      }
   	    }(singleEc).recover{case ex: Exception => {
